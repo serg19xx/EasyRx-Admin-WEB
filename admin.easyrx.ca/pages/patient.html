@@ -1,0 +1,457 @@
+<div class="container-fluid my-2">
+    <div class="d-flex justify-content-between my-3">
+        <div class="form-group">
+            <button id="btnFixAddress" type="button" class="btn btn-primary" data-toggle="modal" data-target="#addressFormModal" disabled>
+                Fix address
+            </button>
+            <button id="btnDeletePatient" type="button" class="btn btn-danger" disabled>
+                Delete patient
+            </button>
+            <!-- Material indeterminate -->
+            <!--
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="wrongAddress" value="1">
+                <label class="form-check-label" for="wrongAddress">Show wrong addresses only</label>
+            </div>           
+            -->
+        </div>
+        <div class="d-flex">
+            <select id="fltCountry" class="custom-select custom-select-sm">
+                <option>aaa</option>
+            </select>
+            <select id="fltRegion" class="custom-select custom-select-sm">
+                <option>aaa</option>
+            </select>
+            <select id="fltCity" class="custom-select custom-select-sm">
+                <option>aaa</option>
+            </select>            
+        </div>
+        <div class="form-group d-flex justify-content-end">
+            <label class="mr-3 pt-2" for="pharmList">Select pharmacy</label>
+            <select id="pharmList" class="form-control custom-select mr-2 col-6">
+            </select>
+        </div>
+    </div>
+
+    <div>
+        <table id="patientTable" class="table table-sm">
+            <thead class="white-text" style="background-color: #253858 !important;">
+                <tr>
+                    <th>ID#</th>
+                    <th>Name</th>
+                    <th>firstName</th>
+                    <th>lastName</th>
+                    <th>Pharmacy name</th>
+                    <th>Address</th>
+                    <th>Cell phone</th><!-- comment -->
+                    <th>Email</th>
+                    <th>Coordinates</th>
+                    <th>Status</th>
+                    <th>Deliveries</th>
+                </tr>
+            </thead>
+        </table>
+    </div>
+</div>
+
+<style type="text/css" rel="stylesheet">
+    .modal-dialog {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0;
+        padding: 0;
+    }
+
+    .modal-content {
+        height: auto;
+        min-height: 100%;
+        border-radius: 0;
+    }    
+
+    .mapboxgl-canvas {
+        left: 0;
+    }
+</style>
+
+<div class="modal fade" id="addressFormModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false" aria-labelledby="myModalLabel"
+     aria-hidden="true">
+    <div class="modal-dialog modal-notify modal-info modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <p class="heading lead">Fix patients address</p>
+
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true" class="white-text">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="oldAddress" class="mb-3">sdfgsdfg</div>
+                <div
+                    id="map"
+                    style="height: 450px;"
+                    ></div>
+                <input id="addressResultStr" type="hidden" />
+                <input id="geoLat" type="hidden" />
+                <input id="geoLng" type="hidden" />
+                <div class="md-form form-lg">
+                    <input type="text" id="appartmentNumber" class="form-control form-control-lg">
+                    <label for="appartmentNumber">Apartmet/Unit number</label>
+                </div>
+                <div id="addressString" class="mt-3"></div>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" id="saveAddress" class="btn btn-info">Save <i class="far fa-gem ml-1 text-white"></i></button>
+                <button type="button" class="btn btn-outline-info waves-effect" data-dismiss="modal">Cancel</button>
+            </div>            
+        </div>
+    </div>
+
+</div>
+
+<script>
+    var patientTable;
+    var fltCountry, fltRegion, fltCity;
+    var ipData;
+    
+    $(document).ready(function (e) {
+        mapboxgl.accessToken = 'pk.eyJ1Ijoic2VyZzE5eHgiLCJhIjoiY2p6MDBzeGxyMDMxNDNvcWl3cDRkYm5zcSJ9.3LSxS0Bb0H3QppM-at6vhw';
+        var map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v9',
+            center: [-79.4512, 43.656],
+            zoom: 9
+        });
+
+        $.ajax({
+            url: '../php/get-driver-country-flt.php',
+            dataType: 'JSON',
+            method: 'POST',
+            data: {},
+            success: function (response) {
+                console.log('COUNTRIES:', response);
+                $("#fltCountry").empty();
+                $('<option/>', {
+                    text: 'All',
+                    value: '0',
+                    selected: true
+                }).appendTo("#fltCountry");
+                $.each(response.filtSet, function (i, el) {
+                    $('<option/>', {
+                        text: el.country, // == null ? 'Without address' : el.country,
+                        value: el.country// == null ? '' : el.country,
+                    }).appendTo("#fltCountry");
+                });
+                $("#fltCountry").change();
+            }
+        });
+
+        $("#fltCountry").on('change', function (e) {
+            var val = $(this).val();
+            fltCountry = val;
+            console.log('COUNTRY');
+            $("#fltRegion").empty();
+            $('<option/>', {
+                text: 'All',
+                value: '0',
+                selected: true
+            }).appendTo("#fltRegion");
+            if (val != '0' && val != '') {
+                $.ajax({
+                    url: '../php/get-driver-region-flt.php',
+                    dataType: 'JSON',
+                    method: 'POST',
+                    async: false,
+                    data: {country: val},
+                    success: function (response) {
+                        console.log('REGIONS:', response);
+                        $.each(response.filtSet, function (i, el) {
+                            $('<option/>', {
+                                text: el.region, // == null ? 'Without region' : el.region,
+                                value: el.region// == null ? '' : el.region,
+                            }).appendTo("#fltRegion");
+                        });
+                    }
+                });
+            }
+            $("#fltRegion").change();
+        });
+
+        $("#fltRegion").on('change', function (e) {
+            var val = $(this).val();
+            fltRegion = val;
+            console.log('REGION');
+            $("#fltCity").empty();
+            $('<option/>', {
+                text: 'All',
+                value: '0',
+                selected: true
+            }).appendTo("#fltCity");
+            if (val != '0') {
+                $.ajax({
+                    url: '../php/get-driver-city-flt.php',
+                    dataType: 'JSON',
+                    method: 'POST',
+                    async: false,
+                    data: {
+                        country: $("#fltCountry").val(),
+                        region: val
+                    },
+                    success: function (response) {
+                        //console.log('CITIES:',response);
+                        $.each(response.filtSet, function (i, el) {
+                            $('<option/>', {
+                                text: el.city, // == null ? 'Without city' : el.city,
+                                value: el.city// == null ? '' : el.city,
+                            }).appendTo("#fltCity");
+                        });
+                    }
+                });
+            }
+            $("#fltCity").change();
+        });
+
+        $("#fltCity").on('change', function (e) {
+            fltCity = $(this).val();
+            //console.log('CITY');
+            pharmacyFlt(fltCountry, fltRegion, fltCity);
+            //patientTable.ajax.reload();
+        });
+
+        $.getJSON('https://api.db-ip.com/v2/free/self', function (data) {
+            console.log('IP:', data);
+            ipData = data;
+        });
+
+        map.on('load', function (e) {
+            console.log('MAP LOADED');
+            var mapCanvas = document.getElementsByClassName('mapboxgl-canvas')[0];
+            var mapDiv = document.getElementById('map');
+            //mapDiv.style.width = '93%';
+            mapCanvas.style.width = '100%';
+            //mapDiv.style.height = '80%';
+            mapCanvas.style.height = '100%';
+            
+            
+
+            console.log('IIPP:', ipData);
+            geocoder.query(ipData.city);            
+            
+            geocoder.on('result', function (ev) {
+                console.log('SPP: ', ev.result.geometry.coordinates);
+                var styleSpec = ev.result.place_name.split(',');
+                var pp = styleSpec[2].split(' ');
+                
+                var addressStr = 'Street address: ' + styleSpec[0] + '<br>';
+                addressStr += 'City : ' + styleSpec[1] + '<br>';
+                addressStr += 'Province : ' + styleSpec[2].split(' ')[1] + '<br>';
+                addressStr += 'Postal code : ' + styleSpec[2].split(' ')[2] + ' ' + styleSpec[2].split(' ')[3] + '<br>';
+                addressStr += 'Country : ' + styleSpec[3];
+                $("#addressResultStr").val(ev.result.place_name);
+                $("#addressString").html(addressStr);
+                $("#oldAddress").text(ev.result.place_name);
+                $("#geoLat").val(ev.result.geometry.coordinates[1]);
+                $("#geoLng").val(ev.result.geometry.coordinates[0]);
+            });            
+            
+        }).resize();
+
+
+
+        geocoder = new MapboxGeocoder({
+            accessToken: mapboxgl.accessToken,
+            mapboxgl: mapboxgl
+                    //countries: ipData.countryCode
+        });
+
+        map.addControl(geocoder, 'top-left');
+/*
+        map.on('load', function () {
+            console.log('CRESULT');
+            var ipData;
+            $.getJSON('https://api.db-ip.com/v2/free/self', function (data) {
+                console.log('IP:', data);
+                ipData = data;
+            });
+            console.log('IIPP:', ipData);
+            geocoder.query(ipData.city);
+
+
+        });
+        */
+
+        //pharmacyFlt(fltCountry, fltRegion, fltCity);
+
+        $("#pharmList").on('change', function (e) {
+            //console.log('CHANGED');
+            //pharmId = $(this).val();
+            patientTable.ajax.reload();
+        });
+
+        $("#wrongAddress").on('change', function (e) {
+            patientTable.ajax.reload();
+        });
+
+        patientTable = $("#patientTable").DataTable({
+            processing: true,
+            serverSide: true,
+            pageLength: 10,
+            select: {style: 'single'},
+            //ordering: false,
+            ajax: {
+                url: 'https://api.easyrx.ca/v1/admin-get-patient-datatable.php',
+                dataType: 'jsonp',
+                data: function (d) {
+                    return $.extend({}, d, {
+                        pharmId: $("#pharmList").val(),
+                        wrong: $("#wrongAddress").attr('checked') ? 1 : 0,
+                        country: fltCountry,
+                        region: fltRegion,
+                        city: fltCity
+                    });
+                }
+            },
+            columns: [
+                {data: 'id', width: 80},
+                {data: null, width: 250},
+                {data: 'firstName', visible: false, width:0},
+                {data: 'lastName', visible: false, width:0},
+                {data: 'operName'},
+                {data: 'fullAddress'},
+                {data: 'cell'},
+                {data: 'email'},
+                {data: null, defaultContent: '',width: 170},
+                {data: 'status', width: 80},
+                {data: 'deliveryCount', width: 100}
+            ],
+            columnDefs: [
+                {
+                    targets: 1,
+                    render: function (data, type, row, meta) {
+                        return row.firstName + ' ' + row.lastName; //+' / '+row.date_created.replace(/-/g,'')+'-'+row.number;
+                    }
+                },
+                {
+                    targets: 5,
+                    render: function (data, type, row, meta) {
+                        console.log('RRRRRRRR:',row);
+                        if (!$.isEmptyObject(row.lat)) {
+                            return row.lat + ", " + row.lng;
+                        } else {
+                            return '';
+                        }
+                    }
+                }
+            ],
+            rowCallback: function (row, data, index) {
+                if (!data.status) {
+                    $(row).addClass('text-danger');
+                }
+            },
+            initComplete: function (settings, json) {
+                //console.log('INIT');
+                //patientTable.row(':eq(0)').select();
+                //$('#patientTable tbody tr:eq(0)').click();
+            }
+        });
+
+        $('#patientTable').on('select.dt deselect.dt', function (e, dt, type, indexes) {
+            //console.log($(dt)[0].data());
+            var selectedRow = patientTable.rows({selected: true});
+            rowData = selectedRow.row(selectedRow).data();
+            var stat = selectedRow.count() == 0 ? true : false;
+            $("#btnFixAddress").prop('disabled', stat);
+            $("#btnDeletePatient").prop('disabled', stat);
+        });
+
+        $("#addressFormModal").on('show.bs.modal', function () {
+            $("#appartmentNumber").val('').blur();
+            $("#addressResultStr").val('');
+            $("#addressString").empty();
+            $("#oldAddress").text(rowData.fullAddress);
+        });
+
+        $("#btnDeletePatient").on('click', function (e) {
+            $.ajax({
+                url: 'https://api.easyrx.ca/v1/admin-delete-patients-fixed-address.php',
+                dataType: 'json',
+                method: 'post',
+                data: {
+                    userId: rowData.id
+                },
+                success: function (result, status, xhr) {
+                    if (result.error > 0) {
+                        alert(result.message);
+                    } else {
+                        patientTable.draw(false);
+                        alert(result.message);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    alert(error);
+                }
+            });
+        });
+
+        $("#saveAddress").on('click', function (e) {
+            $.ajax({
+                url: 'https://api.easyrx.ca/v1/admin-save-patients-fixed-address.php',
+                dataType: 'json',
+                method: 'post',
+                data: {
+                    userId: rowData.id,
+                    address: $("#addressResultStr").val(),
+                    appartment: $("#appartmentNumber").val(),
+                    patientLat: $("#geoLat").val(),
+                    patientLng: $("#geoLng").val()
+                },
+                /*
+                 data: function(d){
+                 return $.extend({}, d, {
+                 userId: rowData.id,
+                 address: $("#addressResultStr").val(),
+                 appartment: $("#appartmentNumber").val()
+                 });
+                 },
+                 * 
+                 */
+                success: function (result, status, xhr) {
+                    patientTable.row('.selected').cell(':eq(2)').data($("#addressResultStr").val());
+                    patientTable.row('.selected').cell(':eq(3)').data(true);
+                    patientTable.draw(false);
+                },
+                error: function (xhr, status, error) {
+                    alert(error);
+                }
+            });
+        });
+    });
+
+    function pharmacyFlt(country, region, city) {
+        $.ajax({
+            url: 'https://api.easyrx.ca/v1/admin-get-pharm-options.php',
+            dataType: 'json',
+            method: 'post',
+            async: true,
+            data: {country:country,region:region,city:city},
+            success: function (result, status, xhr) {
+                $("#pharmList").empty();
+                $('<option/>', {
+                    value: 0,
+                    selected: true,
+                    text: 'Select pharmacy...'
+                }).appendTo("#pharmList");
+                $.each(result.data, function (i, e) {
+                    //console.log(e);
+                    $('<option/>', {
+                        value: e.id,
+                        text: e.operName + ' / ' + e.legalName
+                    }).appendTo("#pharmList");
+                });
+                $("#pharmList").change();
+            },
+            error: function (xhr, status, error) {
+            }
+        });
+    }
+
+</script>
